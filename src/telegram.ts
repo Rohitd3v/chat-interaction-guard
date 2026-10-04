@@ -16,13 +16,9 @@
  * (the machine value) is constrained.
  */
 import type { InteractionGuard } from './guard.js';
+import { byteLength } from './codec.js';
 
 export const TELEGRAM_CALLBACK_DATA_LIMIT = 64;
-
-/** UTF-8 byte length (Telegram's callback_data limit is a byte limit). */
-function byteLength(value: string): number {
-  return new TextEncoder().encode(value).length;
-}
 
 /** Telegram silently strips these characters from callback_data at send time. */
 export const TELEGRAM_CALLBACK_DANGEROUS_CHARS = /[& +'"<>,]/;

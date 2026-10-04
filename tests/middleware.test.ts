@@ -341,4 +341,27 @@ describe('telegramExtractor', () => {
     expect(outcome.status === 'handled' && outcome.intent.kind).toBe('current');
     expect(onIntent).toHaveBeenCalledOnce();
   });
+
+  it('supports asynchronous session retrieval (e.g. from database or cache)', async () => {
+    const onIntent = vi.fn();
+    const handle = createInteractionHandler(
+      base({
+        session: async () => {
+          // Simulate async DB / Redis lookup
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return session;
+        },
+        onIntent,
+      }),
+    );
+    const outcome = await handle({
+      interactive: { button_reply: { id: guard.encode({ version: 4, step: 'awaiting_slot', action: 'lunch' }) } },
+    });
+    expect(outcome.status).toBe('handled');
+    if (outcome.status === 'handled') {
+      expect(outcome.intent.kind).toBe('current');
+    }
+    expect(onIntent).toHaveBeenCalledOnce();
+  });
 });
+

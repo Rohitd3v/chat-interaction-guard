@@ -147,14 +147,11 @@ const button = {
 
 ```typescript
 // In your webhook handler:
-const intent = guard.resolveIntent({
-  rawId: req.body.entry[0].changes[0].value.messages[0].interactive.button_reply.id,
-  // For plain text messages pass `text` instead — global commands like
-  // "cancel" / "help" are classified the same way as button payloads.
-  currentStep: session.currentStep,
-  currentVersion: session.flowVersion,
-  historyStack: session.historyStack, // ['home', 'awaiting_plan', 'awaiting_slot']
-});
+// For interactive payloads pass { rawId: ... }; for plain text pass { text: ... }
+const intent = guard.resolveIntent(
+  { rawId: req.body.entry[0].changes[0].value.messages[0].interactive.button_reply.id },
+  session,
+);
 
 switch (intent.kind) {
   case 'current': {
@@ -165,7 +162,8 @@ switch (intent.kind) {
   case 'rewind': {
     // User clicked a button from an earlier step!
     // 1. Unwind history stack to the target step
-    const updatedHistory = guard.unwindHistory(session.historyStack, intent.targetStep);
+    const unwind = guard.unwindHistory(session.historyStack, intent.targetStep);
+    if (!unwind.ok) return;
     
     // 2. Prune downstream draft keys
     const cleanDraft = guard.pruneDraft({
@@ -174,9 +172,10 @@ switch (intent.kind) {
     });
 
     // 3. Save new state at incremented version
-    session.historyStack = updatedHistory;
+    session.historyStack = unwind.stack;
     session.currentStep = intent.targetStep;
     session.flowVersion += 1;
+    session.draft = cleanDraft;
 
     // 4. Re-render the step prompt for a deliberate choice
     return await bot.renderStep(session.phone, intent.targetStep);

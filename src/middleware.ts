@@ -59,8 +59,8 @@ export interface InteractionMiddlewareOptions {
   /** Normalize a parsed webhook body. Return `undefined` to ignore it. */
   readonly extract: (body: unknown) => InboundInteraction | undefined;
 
-  /** Look up the session snapshot for this request. */
-  readonly session: (body: unknown) => InteractionSession;
+  /** Look up the session snapshot for this request (sync or async). */
+  readonly session: (body: unknown) => InteractionSession | Promise<InteractionSession>;
 
   /** Called once per classified intent, after the ack has been sent. */
   readonly onIntent: (intent: InteractionIntent, context: InteractionContext) => void | Promise<void>;
@@ -109,7 +109,7 @@ export function createInteractionHandler(
     try {
       // Inside the try: a store outage must degrade to an `error` outcome,
       // not escape as an unhandled rejection after the ack has been sent.
-      const snapshot = session(body);
+      const snapshot = await session(body);
       const context: InteractionContext = { body, session: snapshot };
 
       const intent =
