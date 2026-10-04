@@ -2,6 +2,15 @@
   "name": "chat-interaction-guard",
   "version": "0.1.0",
   "description": "Zero-dependency engine for versioned chat interactions: safe stale-button rewinds and back-navigation for WhatsApp, Telegram, Slack, and Messenger bots.",
+  "author": "Rohit Singh Negi <rohitsnegi72@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rohitd3v/chat-interaction-guard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rohitd3v/chat-interaction-guard/issues"
+  },
+  "homepage": "https://github.com/Rohitd3v/chat-interaction-guard#readme",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -83,7 +92,8 @@
     "coverage": "vitest run --coverage",
     "playground": "npm run build && node ./dist/cli.js",
     "typecheck": "tsc --noEmit",
-    "bench": "vitest bench"
+    "bench": "vitest bench",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "engines": {
     "node": ">=18"
