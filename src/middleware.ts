@@ -112,10 +112,9 @@ export function createInteractionHandler(
       const snapshot = await session(body);
       const context: InteractionContext = { body, session: snapshot };
 
-      const intent =
-        inbound.kind === 'payload'
-          ? guard.resolveIntent({ rawId: inbound.rawId }, snapshot)
-          : guard.resolveIntent({ text: inbound.text }, snapshot);
+      const input =
+        inbound.kind === 'payload' ? { rawId: inbound.rawId } : { text: inbound.text };
+      const intent = guard.resolveIntent(input, snapshot);
 
       // Record the id only for clicks we actually acted on. A `stale` click was
       // never executed, so remembering it would suppress a legitimate retry.

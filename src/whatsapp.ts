@@ -12,6 +12,7 @@
  *    ≤ 20 characters, row title ≤ 24, row description ≤ 72, section title ≤ 24.
  */
 import type { InteractionGuard } from './guard.js';
+import { charCount, isRecord } from './internal/guards.js';
 
 export const WHATSAPP_LIMITS = {
   maxButtons: 3,
@@ -103,11 +104,6 @@ export interface WhatsAppAdapter {
     readonly buttonText: string;
     readonly sections: readonly ListSectionInput[];
   }): { readonly button: string; readonly sections: readonly WhatsAppListSection[] };
-}
-
-/** Code-point length — Meta's title limits are counted in characters, not bytes. */
-function charCount(value: string): number {
-  return [...value].length;
 }
 
 function assertTitle(field: string, value: string, max: number): void {
@@ -218,10 +214,6 @@ export function createWhatsAppAdapter(guard: InteractionGuard): WhatsAppAdapter 
 export type InboundInteraction =
   | { readonly kind: 'payload'; readonly rawId: string }
   | { readonly kind: 'text'; readonly text: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 
 /**
  * Normalize an inbound WhatsApp webhook message (the object inside

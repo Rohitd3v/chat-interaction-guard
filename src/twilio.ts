@@ -19,6 +19,7 @@
  * business-initiated conversation and is not submitted for approval.
  */
 import type { InteractionGuard } from './guard.js';
+import { charCount, isRecord } from './internal/guards.js';
 
 export const TWILIO_LIMITS = {
   /** Reply id ceiling, in the `id` field of a button or list item. */
@@ -135,11 +136,6 @@ export type TwilioAdapterOptions = {
    */
   readonly maxQuickReplies?: number | undefined;
 };
-
-/** Code-point length — Twilio's limits are characters, not bytes. */
-function charCount(value: string): number {
-  return [...value].length;
-}
 
 function assertBounded(
   field: string,
@@ -278,10 +274,6 @@ export function createTwilioAdapter(
       return { body, button, items: outItems };
     },
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 /**

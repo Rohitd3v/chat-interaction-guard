@@ -137,6 +137,10 @@ const twAdapter = createTwilioAdapter(guard);
 
 type TransportId = 'whatsapp' | 'telegram' | 'slack' | 'twilio';
 
+type AdapterInbound =
+  | { readonly kind: 'payload'; readonly rawId: string }
+  | { readonly kind: 'text'; readonly text: string };
+
 interface WireRender {
   /** The JSON this platform actually puts on the wire, outbound. */
   readonly payload: unknown;
@@ -170,6 +174,22 @@ function asArray(value: unknown): unknown[] {
 function stringAt(record: Record<string, unknown> | undefined, key: string): string[] {
   const v = record?.[key];
   return typeof v === 'string' ? [v] : [];
+}
+
+/**
+ * Keep only the payload branch of an adapter extractor.
+ *
+ * Slack and Twilio extractors also surface free-text messages; the playground
+ * only ever replays button clicks, so the text branch is dropped here rather
+ * than duplicated in each transport entry.
+ */
+function payloadOnly(
+  extract: (body: unknown) => AdapterInbound | undefined,
+): (body: unknown) => InboundInteraction | undefined {
+  return (body) => {
+    const got = extract(body);
+    return got?.kind === 'payload' ? { kind: 'payload', rawId: got.rawId } : undefined;
+  };
 }
 
 const TRANSPORTS: Record<TransportId, Transport> = {
@@ -231,10 +251,7 @@ const TRANSPORTS: Record<TransportId, Transport> = {
         }),
       };
     },
-    extract: (body) => {
-      const got = extractSlackAction(body);
-      return got?.kind === 'payload' ? { kind: 'payload', rawId: got.rawId } : undefined;
-    },
+    extract: payloadOnly(extractSlackAction),
     harvestIds: (payload) =>
       asArray(asRecord(payload)?.blocks)
         .flatMap((block) => asArray(asRecord(block)?.elements))
@@ -256,10 +273,7 @@ const TRANSPORTS: Record<TransportId, Transport> = {
         webhookFor: (rawId) => ({ ButtonPayload: rawId }),
       };
     },
-    extract: (body) => {
-      const got = extractTwilioInteraction(body);
-      return got?.kind === 'payload' ? { kind: 'payload', rawId: got.rawId } : undefined;
-    },
+    extract: payloadOnly(extractTwilioInteraction),
     harvestIds: (payload) =>
       asArray(asRecord(asRecord(payload)?.['twilio/quick-reply'])?.actions).flatMap((a) =>
         stringAt(asRecord(a), 'id'),
@@ -374,9 +388,10 @@ function verifyWireIds(
  * body → that adapter's extractor → guard.resolveIntent. This exercises the
  * real inbound path rather than shortcutting straight to the raw id.
  */
-function clickTranscriptButton(n: number): void {
-  const button = transcript.find((b) => b.n === n);
+function clickTranscriptButton(token: string): void {
+  const button = transcript.find((b) => b.n === Number(token));
   if (button === undefined) {
+    console.log(red(`no button #${token} in the transcript — try "transcript"`));
     return;
   }
   const t = TRANSPORTS[button.transport];
@@ -656,12 +671,7 @@ async function main(): Promise<void> {
         rawId: guard.encode({ version: state.flowVersion, step: state.currentStep, action }),
       });
     } else if (cmd.startsWith('@')) {
-      const n = Number(cmd.slice(1));
-      if (!transcript.some((b) => b.n === n)) {
-        console.log(red(`no button #${cmd.slice(1)} in the transcript — try "transcript"`));
-      } else {
-        clickTranscriptButton(n);
-      }
+      clickTranscriptButton(cmd.slice(1));
     } else {
       const step = FLOW[state.currentStep as StepId];
       const index = Number(cmd);

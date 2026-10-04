@@ -101,17 +101,20 @@ export function createInteractionGuard(config: InteractionGuardConfig = {}): Int
         return { kind: 'unknown', reason: 'free_text', text: input.text };
       }
       const rawId = input.rawId;
+      // Decode once and share the result. `decodeInteractionId` never throws,
+      // so hoisting it above the duplicate check cannot change behaviour.
+      const decoded = decodeInteractionId(rawId, codecConfig);
 
       // ── Duplicate suppression (webhook redelivery / double-tap) ────
-      if (session.lastInteractionId !== undefined && session.lastInteractionId === rawId) {
-        const decoded = decodeInteractionId(rawId, codecConfig);
+      // Checked before the parse result is acted on: a redelivered id is a
+      // duplicate whether or not it still parses cleanly.
+      if (session.lastInteractionId === rawId) {
         return decoded.ok
           ? { kind: 'duplicate', rawId, payload: decoded.payload }
           : { kind: 'duplicate', rawId };
       }
 
       // ── Parse (fail-closed) ─────────────────────────────────────────
-      const decoded = decodeInteractionId(rawId, codecConfig);
       if (!decoded.ok) {
         return { kind: 'unknown', reason: decoded.reason, rawId };
       }

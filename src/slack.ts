@@ -19,6 +19,7 @@
  *  - `action_id` max 255 characters, unique within the block.
  */
 import type { InteractionGuard } from './guard.js';
+import { charCount, isRecord } from './internal/guards.js';
 
 export const SLACK_LIMITS = {
   /** Hard Slack limit: max 25 elements in one `actions` block. */
@@ -104,11 +105,6 @@ export type SlackAdapterOptions = {
 };
 
 export const DEFAULT_SLACK_ACTION_ID = 'chat_interaction';
-
-/** Slack counts characters, not bytes, for text and value fields. */
-function charCount(value: string): number {
-  return [...value].length;
-}
 
 function assertText(field: string, value: string, max: number): void {
   if (typeof value !== 'string' || charCount(value) === 0) {
@@ -226,10 +222,6 @@ Offending value: ${JSON.stringify(value)}`,
 export type SlackInboundAction =
   | { readonly kind: 'payload'; readonly rawId: string; readonly actionId: string | undefined }
   | { readonly kind: 'text'; readonly text: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 
 /**
  * Normalize an inbound Slack interactivity payload — the `payload` object
