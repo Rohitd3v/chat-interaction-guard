@@ -1,5 +1,16 @@
 # Chat Interaction Guard (`chat-interaction-guard`)
+
+[![npm version](https://img.shields.io/npm/v/chat-interaction-guard.svg?color=cb3837)](https://www.npmjs.com/package/chat-interaction-guard)
+[![CI](https://github.com/Rohitd3v/chat-interaction-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Rohitd3v/chat-interaction-guard/actions)
+[![license](https://img.shields.io/github/license/Rohitd3v/chat-interaction-guard)](https://github.com/Rohitd3v/chat-interaction-guard/blob/main/LICENSE)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://www.npmjs.com/package/chat-interaction-guard)
+[![TypeScript](https://img.shields.io/badge/types-included-blue.svg)](https://www.npmjs.com/package/chat-interaction-guard)
+
 > A lightweight, zero-dependency engine for versioned interactions, safe stale-button rewinds, and back-navigation in conversational bots (WhatsApp, Telegram, Slack, Messenger).
+
+```bash
+npm install chat-interaction-guard
+```
 
 ---
 
@@ -654,7 +665,8 @@ Invariants:
 - [x] GitHub Actions CI: typecheck + tests + coverage gate + build on every push (`.github/workflows/ci.yml`, Node 20 & 22 matrix).
 
 ### Phase 4: Release & Community Launch
-- [ ] Publish to npm under `@chat-guard/core` or `chat-interaction-guard`.
+- [x] Publish to npm as [`chat-interaction-guard`](https://www.npmjs.com/package/chat-interaction-guard) (v0.1.0 live).
+- [x] GitHub repository setup & CI automation ([Rohitd3v/chat-interaction-guard](https://github.com/Rohitd3v/chat-interaction-guard)).
 - [ ] Launch on GitHub, Show HN (Hacker News), and Reddit (`r/node`, `r/whatsapp_api`).
 - [ ] Write a technical deep-dive article: *"Why WhatsApp Bots Break When Users Scroll Up (and How to Fix the Immutable Canvas Problem)"*.
 
