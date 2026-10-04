@@ -9,34 +9,64 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./whatsapp": {
-      "types": "./dist/whatsapp.d.ts",
-      "import": "./dist/whatsapp.js",
-      "require": "./dist/whatsapp.cjs"
+      "import": {
+        "types": "./dist/whatsapp.d.ts",
+        "default": "./dist/whatsapp.js"
+      },
+      "require": {
+        "types": "./dist/whatsapp.d.cts",
+        "default": "./dist/whatsapp.cjs"
+      }
     },
     "./telegram": {
-      "types": "./dist/telegram.d.ts",
-      "import": "./dist/telegram.js",
-      "require": "./dist/telegram.cjs"
+      "import": {
+        "types": "./dist/telegram.d.ts",
+        "default": "./dist/telegram.js"
+      },
+      "require": {
+        "types": "./dist/telegram.d.cts",
+        "default": "./dist/telegram.cjs"
+      }
     },
     "./slack": {
-      "types": "./dist/slack.d.ts",
-      "import": "./dist/slack.js",
-      "require": "./dist/slack.cjs"
+      "import": {
+        "types": "./dist/slack.d.ts",
+        "default": "./dist/slack.js"
+      },
+      "require": {
+        "types": "./dist/slack.d.cts",
+        "default": "./dist/slack.cjs"
+      }
     },
     "./twilio": {
-      "types": "./dist/twilio.d.ts",
-      "import": "./dist/twilio.js",
-      "require": "./dist/twilio.cjs"
+      "import": {
+        "types": "./dist/twilio.d.ts",
+        "default": "./dist/twilio.js"
+      },
+      "require": {
+        "types": "./dist/twilio.d.cts",
+        "default": "./dist/twilio.cjs"
+      }
     },
     "./middleware": {
-      "types": "./dist/middleware.d.ts",
-      "import": "./dist/middleware.js",
-      "require": "./dist/middleware.cjs"
+      "import": {
+        "types": "./dist/middleware.d.ts",
+        "default": "./dist/middleware.js"
+      },
+      "require": {
+        "types": "./dist/middleware.d.cts",
+        "default": "./dist/middleware.cjs"
+      }
     }
   },
   "files": [
