@@ -15,8 +15,10 @@
  *     afterwards. Work that must finish before the ack belongs in `onAck`.
  *  2. **Never 500 on hostile input.** `resolveIntent` throws only when given
  *     neither `rawId` nor `text`; everything user-controlled degrades to an
- *     `unknown` intent. The wrapper contains that throw and reports it as an
- *     `error` outcome instead of taking the route down.
+ *     `unknown` intent. The core contains every other failure — a throwing
+ *     `extract`, `onNoInteraction`, `session`, `onIntent`, `commit`, even a
+ *     throwing `onError` — as an `error` outcome, so no wrapper can surface
+ *     a post-ack rejection.
  *
  * The engine owns no session store, so `session()` is a caller-supplied
  * lookup. Persist exactly the `InteractionSession` shape alongside your draft
@@ -93,6 +95,10 @@ export interface InteractionMiddlewareOptions {
 /**
  * Build the framework-agnostic core: parsed body in, `InteractionOutcome` out.
  * Express and Fastify wrappers are thin shells over this.
+ *
+ * `handle` never rejects: every failure — a throwing `extract`,
+ * `onNoInteraction`, `session`, `onIntent`, `commit`, or `onError` — degrades
+ * to an `{ status: 'error' }` outcome reported through `onError` at most once.
  */
 export function createInteractionHandler(
   options: InteractionMiddlewareOptions,
@@ -100,15 +106,17 @@ export function createInteractionHandler(
   const { guard, extract, session, onIntent, onNoInteraction, onError, commit } = options;
 
   return async function handle(body: unknown): Promise<InteractionOutcome> {
-    const inbound = extract(body);
-    if (inbound === undefined) {
-      await onNoInteraction?.(body);
-      return { status: 'ignored' };
-    }
-
     try {
-      // Inside the try: a store outage must degrade to an `error` outcome,
-      // not escape as an unhandled rejection after the ack has been sent.
+      // Everything lives inside the try. `extract` runs before the session
+      // lookup but is caller-supplied code all the same: a throwing extractor
+      // must degrade to an `error` outcome exactly like a store outage, not
+      // escape as a post-ack rejection the wrappers cannot contain.
+      const inbound = extract(body);
+      if (inbound === undefined) {
+        await onNoInteraction?.(body);
+        return { status: 'ignored' };
+      }
+
       const snapshot = await session(body);
       const context: InteractionContext = { body, session: snapshot };
 
@@ -125,7 +133,13 @@ export function createInteractionHandler(
       await onIntent(intent, context);
       return { status: 'handled', intent, context };
     } catch (error) {
-      await onError?.(error, body);
+      try {
+        await onError?.(error, body);
+      } catch {
+        // `onError` is caller code too. The ack has long been sent, so there
+        // is no channel left to report a broken error handler into — the
+        // `error` outcome below is still delivered.
+      }
       return { status: 'error', error };
     }
   };
@@ -212,12 +226,10 @@ export function fastifyInteractionHandler(
       sent.send(ackBody);
     }
 
-    const outcome = await handle(request.body);
-    if (outcome.status === 'error') {
-      // The reply is already sent, so this must not throw a second time —
-      // report through the error channel instead.
-      options.onError?.(outcome.error, request.body);
-    }
+    // The core reports every failure through `onError` and never rejects;
+    // calling it again here would double-report, and a rejection after the
+    // reply is sent would only produce Fastify "reply already sent" noise.
+    await handle(request.body);
     return reply;
   };
 }

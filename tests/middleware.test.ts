@@ -196,6 +196,41 @@ describe('createInteractionHandler', () => {
     expect(onError).toHaveBeenCalled();
   });
 
+  it('contains a throwing extract as an error outcome', async () => {
+    const onError = vi.fn();
+    const boom = new Error('bad extract');
+    const handle = createInteractionHandler(
+      base({ extract: () => { throw boom; }, onError }),
+    );
+    const outcome = await handle({ interactive: { button_reply: { id: 'v1:s:a' } } });
+    expect(outcome).toEqual({ status: 'error', error: boom });
+    expect(onError).toHaveBeenCalledWith(boom, expect.anything());
+  });
+
+  it('contains a throwing onNoInteraction as an error outcome', async () => {
+    const onError = vi.fn();
+    const boom = new Error('bad no-interaction hook');
+    const handle = createInteractionHandler(
+      base({ onNoInteraction: () => { throw boom; }, onError }),
+    );
+    const outcome = await handle({ type: 'status' });
+    expect(outcome).toEqual({ status: 'error', error: boom });
+    expect(onError).toHaveBeenCalledWith(boom, expect.anything());
+  });
+
+  it('never rejects, even when onError itself throws', async () => {
+    const handle = createInteractionHandler(
+      base({
+        onIntent: () => { throw new Error('handler boom'); },
+        onError: () => { throw new Error('logger boom'); },
+      }),
+    );
+    const outcome = await handle({
+      interactive: { button_reply: { id: guard.encode({ version: 4, step: 'awaiting_slot', action: 'a' }) } },
+    });
+    expect(outcome.status).toBe('error');
+  });
+
   it('supports text interactions', async () => {
     const onIntent = vi.fn();
     const handle = createInteractionHandler(
@@ -307,7 +342,20 @@ describe('fastifyInteractionHandler', () => {
     await expect(
       mw({ body: { interactive: { button_reply: { id: guard.encode({ version: 4, step: 'awaiting_slot', action: 'a' }) } } } }, reply),
     ).resolves.toBe(reply);
-    expect(onError).toHaveBeenCalled();
+    // Exactly once: the core reports, the wrapper must not repeat it.
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it('contains a throwing extract: no rejection, onError reported once', async () => {
+    const onError = vi.fn();
+    const mw = fastifyInteractionHandler(
+      base({ extract: () => { throw new Error('bad extract'); }, onError }),
+    );
+    const reply = fastifyDouble([]);
+    await expect(
+      mw({ body: { interactive: { button_reply: { id: 'v1:s:a' } } } }, reply),
+    ).resolves.toBe(reply);
+    expect(onError).toHaveBeenCalledOnce();
   });
 });
 
