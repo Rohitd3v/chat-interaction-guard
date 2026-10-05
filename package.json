@@ -1,6 +1,6 @@
 {
   "name": "chat-interaction-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Zero-dependency engine for versioned chat interactions: safe stale-button rewinds and back-navigation for WhatsApp, Telegram, Slack, and Messenger bots.",
   "author": "Rohit Singh Negi <rohitsnegi72@gmail.com>",
   "repository": {
