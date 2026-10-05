@@ -12,6 +12,16 @@
 npm install chat-interaction-guard
 ```
 
+## Documentation
+
+| | |
+|---|---|
+| 🚀 **[Getting started](docs/getting-started.md)** | A working guarded bot end to end, in ~80 lines |
+| 🧠 **[Concepts](docs/concepts.md)** | The Immutable Canvas, intent classification, history stack — with diagrams |
+| 📖 **[API reference](docs/api-reference.md)** | Every export, option, limit, and error code |
+| 🔌 **[Platform guides](docs/platform-guides.md)** | WhatsApp · Telegram · Slack · Twilio · Express · Fastify · Next.js |
+| 🍳 **[Recipes](docs/recipes.md)** | Session persistence, back buttons, duplicate windows, testing, deploy checklist |
+
 ---
 
 ## 1. Executive Summary & The Problem
@@ -327,7 +337,8 @@ if (raw) {
 
 ### 6.6 Interactive Playground (Phase 3)
 
-Watch the engine make every §7 decision live — on **any of the four transports**:
+Watch the engine make every §7 decision live — on **any of the four platform
+transports, plus the Next.js route handler**:
 
 ```bash
 npm run playground        # or, once published: npx chat-interaction-guard
@@ -381,8 +392,12 @@ stops embedding the id, and an extractor that stops reading the field the
 adapter writes.
 
 Commands: `transport` (list), `transport X` (switch to
-`whatsapp | telegram | slack | twilio`), `wire` (pretty-print the last payload),
-`transcript`, `debug`, `quit`.
+`whatsapp | telegram | slack | twilio | next`), `wire` (pretty-print the last
+payload), `transcript`, `debug`, `quit`. Switching to `next` also performs the
+Meta GET verification handshake, and clicks on Next-rendered buttons replay
+through the real route handler — POST acks 200 first, then the intent is
+classified in the background and captured via `waitUntil`, exactly as a
+serverless deployment would run it.
 
 ### 6.7 Slack Block Kit Adapter (Phase 2)
 
@@ -577,11 +592,83 @@ wrong:
    20 seconds and Twilio retries hard. `onIntent` is allowed to be slow; work
    that must complete before the ack belongs elsewhere.
 2. **Nothing user-controlled can 500 the route.** Every adapter extractor is
-   fail-closed, and the wrapper contains the one case where `resolveIntent`
-   throws (an empty input) plus any failure from your `session` or `commit`
-   hook — all surface as an `error` outcome, never an unhandled rejection.
+   fail-closed, and the core contains every remaining failure — a throwing
+   `extract`, `onNoInteraction`, `session`, `onIntent`, or `commit` hook, even
+   a throwing `onError` — surfacing as an `error` outcome through `onError`
+   exactly once, never an unhandled or post-ack rejection.
 3. **`commit` is skipped for `stale`.** A stale click was never executed, so
    remembering its id would suppress the retry that *should* succeed.
+
+### 6.10 Next.js App Router Route Handler (Phase 3)
+
+Import from the `chat-interaction-guard/next` subpath. App Router route
+handlers are standard Web `Request` → `Response` functions, so they are
+described structurally — no `next/server` import — and the package keeps its
+zero-dependency guarantee. The same handler runs unchanged on the Node.js and
+Edge runtimes.
+
+```typescript
+// app/api/webhooks/[channel]/route.ts
+import { createInteractionGuard } from 'chat-interaction-guard';
+import { extractInboundInteraction } from 'chat-interaction-guard/whatsapp';
+import { nextWebhookRoute } from 'chat-interaction-guard/next';
+import { waitUntil } from 'next/server';
+
+const guard = createInteractionGuard({ globalActions: ['cancel'] });
+
+export const { POST, GET } = nextWebhookRoute({
+  guard,
+  extract: extractInboundInteraction,
+  session: (body) => loadSession(phoneFromWebhook(body)),
+  commit: (session, rawId) => saveLastInteractionId(session, rawId),
+  onIntent: handleIntent,          // same switch as §6.9
+  onError: (err) => logger.error({ err }),
+
+  // Serverless: keep the background dispatch alive past the ack.
+  waitUntil,
+
+  // Meta verifies the URL with a GET handshake before sending traffic.
+  verifyToken: process.env.META_VERIFY_TOKEN,
+});
+```
+
+Everything from §6.9 carries over — ack-first dispatch, `commit`-powered
+duplicate suppression, `stale` clicks never committed, and nothing
+user-controlled that can 500 the route (malformed JSON, throwing extractors
+and store outages all degrade into `onError`). Three things are Next-specific:
+
+1. **POST acks before dispatching.** The 200 `Response` is returned
+   immediately and the intent is classified in the background. Pass
+   `waitUntil` from `next/server` (Next.js 15+) so serverless runtimes keep
+   the process alive until the dispatch completes — without it, the instance
+   can be frozen the moment the ack is sent and the intent may never run. On a
+   long-running Node host it is unnecessary.
+2. **Body parsing handles the two shapes platforms actually post.** JSON is
+   parsed as JSON; `application/x-www-form-urlencoded` (Twilio) is parsed into
+   flat decoded fields via `URLSearchParams`. Slack interactive callbacks wrap
+   the whole `block_actions` object in one urlencoded `payload` field — unwrap
+   it with a one-liner:
+
+   ```typescript
+   import { defaultParseBody } from 'chat-interaction-guard/next';
+   import { extractSlackAction } from 'chat-interaction-guard/slack';
+
+   nextWebhookRoute({
+     extract: extractSlackAction,
+     parseBody: async (req) =>
+       JSON.parse(String(((await defaultParseBody(req)) as { payload?: string }).payload)),
+     // …
+   });
+   ```
+
+3. **`verify` gates the POST, `verifyToken` powers the GET.** `verify` is the
+   hook for platform auth checks — Telegram's `X-Telegram-Bot-Api-Secret-Token`
+   header, Slack request signing — and a `403` answers anything it rejects
+   (a throwing `verify` is a rejection too, never a bypass). `verifyToken`
+   turns the exported GET handler into Meta's `hub.challenge` echo; without
+   it, GET answers 405. `ackBody` still controls the acknowledgement — a
+   `string` is sent as `text/plain`, an object as `application/json`, and a
+   full `Response` is passed through untouched when you need exact headers.
 
 ---
 
@@ -657,11 +744,11 @@ Invariants:
 - [x] **Twilio Content API Adapter**: `chat-interaction-guard/twilio` — builds `twilio/quick-reply` and `twilio/list-picker` content bodies with the encoded reply id in the 200-character `id` field, defaults to the 3-button in-session cap (10 opt-in for templates), and normalizes `ButtonPayload` / `ListItemSelected` webhooks.
 
 ### Phase 3: Developer Experience & Documentation
-- [ ] Comprehensive documentation with interactive ASCII / Mermaid diagrams.
+- [x] Comprehensive documentation with interactive ASCII / Mermaid diagrams (`docs/`: getting started, concepts, API reference, platform guides, recipes).
 - [x] Interactive demo playground — `npm run playground` (CLI simulator; click any old button with `@n` and watch the intents fire).
-- [x] All four transports wired into the playground (`transport X` / `wire`) — each prompt is built by the real adapter and every click replays through that platform's real extractor.
+- [x] All four platform transports **plus the Next.js route handler** wired into the playground (`transport X` / `wire`) — each prompt is built by the real adapter and every click replays through that platform's real path (Next clicks POST through the real route handler, ack-first).
 - [x] Pre-built middleware for Express / Fastify (`chat-interaction-guard/middleware`) — dependency-free, acks before dispatching so a slow handler cannot cost you the webhook, and contains every failure path.
-- [ ] Next.js App Router route handler (`app/api/webhooks/[channel]/route.ts`).
+- [x] Next.js App Router route handler — `chat-interaction-guard/next`: spread `{ POST, GET }` into `app/api/webhooks/[channel]/route.ts` for ack-first background dispatch, built-in Meta verification handshake, and fail-closed POST parsing (Node & Edge, still zero-dependency).
 - [x] GitHub Actions CI: typecheck + tests + coverage gate + build on every push (`.github/workflows/ci.yml`, Node 20 & 22 matrix).
 
 ### Phase 4: Release & Community Launch
