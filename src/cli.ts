@@ -23,6 +23,7 @@ import { createTelegramAdapter, extractTelegramCallback } from './telegram.js';
 import { createSlackAdapter, extractSlackAction } from './slack.js';
 import { createTwilioAdapter, extractTwilioInteraction } from './twilio.js';
 import { telegramExtractor, type InboundInteraction } from './middleware.js';
+import { nextWebhookRoute } from './next.js';
 
 // ── ANSI helpers (no dependencies) ────────────────────────────────────────
 const bold = (s: string): string => `\u001b[1m${s}\u001b[0m`;
@@ -135,7 +136,43 @@ const tgAdapter = createTelegramAdapter(guard);
 const slackAdapter = createSlackAdapter(guard);
 const twAdapter = createTwilioAdapter(guard);
 
-type TransportId = 'whatsapp' | 'telegram' | 'slack' | 'twilio';
+/**
+ * A REAL Next.js App Router route, driven through its public surface: POST
+ * acks 200 first and classifies in the background (captured via `waitUntil`,
+ * exactly as `next/server` would deliver the promise); GET performs the Meta
+ * verification handshake. The Next handler returns the platform's own wire
+ * payloads, so the WhatsApp adapter builds the buttons for it.
+ */
+const nextRoute = nextWebhookRoute({
+  guard,
+  extract: extractInboundInteraction,
+  session: () => state,
+  // The route core classifies; this executes the SAME demo logic the direct
+  // transports run, so a Next-delivered click advances/rewinds identically.
+  onIntent: (intent) => {
+    if ('rawId' in intent) {
+      state.lastInteractionId = intent.rawId;
+    }
+    printIntent(intent);
+    executeIntent(intent);
+  },
+  waitUntil: (dispatched) => {
+    void dispatched.then((outcome) => {
+      if (
+        typeof outcome === 'object' &&
+        outcome !== null &&
+        'status' in outcome &&
+        outcome.status === 'error'
+      ) {
+        const err = (outcome as unknown as { error: unknown }).error;
+        console.log(red(`   ⚠️ onError: ${err instanceof Error ? err.message : String(err)}`));
+      }
+    });
+  },
+  verifyToken: 'demo-verify-token',
+});
+
+type TransportId = 'whatsapp' | 'telegram' | 'slack' | 'twilio' | 'next';
 
 type AdapterInbound =
   | { readonly kind: 'payload'; readonly rawId: string }
@@ -161,6 +198,11 @@ interface Transport {
    * independent of the code that put it there.
    */
   readonly harvestIds: (payload: unknown) => readonly string[];
+  /**
+   * Only the `next` transport: drive the REAL route handler's POST surface
+   * (ack-first, background classification) instead of extractor→resolver.
+   */
+  readonly replayNext?: (request: Request) => Promise<Response>;
 }
 
 // Minimal structural readers, so each harvester walks the shape a real webhook
@@ -279,10 +321,29 @@ const TRANSPORTS: Record<TransportId, Transport> = {
         stringAt(asRecord(a), 'id'),
       ),
   },
+  next: {
+    id: 'next',
+    label: 'Next.js App Router',
+    limit: 'uses the WhatsApp adapter; route acks 200 before classifying',
+    // The Next handler ships WhatsApp's wire shape (its default parseBody +
+    // extractor are the WhatsApp pair), so delegate to the same builder.
+    build: (options, version, step) => TRANSPORTS.whatsapp.build(options, version, step),
+    extract: extractInboundInteraction,
+    harvestIds: (payload) =>
+      asArray(asRecord(payload)?.buttons).flatMap((b) => stringAt(asRecord(asRecord(b)?.reply), 'id')),
+    replayNext: (request) => nextRoute.POST(request),
+  },
 };
 
 let activeTransport: TransportId = 'whatsapp';
 let lastWirePayload: unknown = null;
+/**
+ * Async demo output (Next route replays, the Meta handshake) settles out of
+ * band — the whole point of ack-first. The main loop awaits this before the
+ * next prompt so the story prints in order; the ack line itself still prints
+ * the moment the route responds.
+ */
+let pendingDisplay: Promise<void> | null = null;
 
 function transport(): Transport {
   return TRANSPORTS[activeTransport];
@@ -387,6 +448,11 @@ function verifyWireIds(
  * Replay a transcript click through the transport that rendered it: webhook
  * body → that adapter's extractor → guard.resolveIntent. This exercises the
  * real inbound path rather than shortcutting straight to the raw id.
+ *
+ * `next`-rendered buttons take the longer road on purpose: their webhook body
+ * goes through the REAL route handler — POST acks 200 first, then the intent
+ * is classified in the background and captured via `waitUntil`, exactly as
+ * `next/server` would keep the dispatch alive on a serverless instance.
  */
 function clickTranscriptButton(token: string): void {
   const button = transcript.find((b) => b.n === Number(token));
@@ -395,6 +461,25 @@ function clickTranscriptButton(token: string): void {
     return;
   }
   const t = TRANSPORTS[button.transport];
+
+  if (button.transport === 'next') {
+    pendingDisplay = (async () => {
+      const request = new Request('https://demobites.example/api/webhooks/whatsapp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(button.webhook),
+      });
+      const response = await t.replayNext!(request);
+      console.log(
+        dim(
+          `   ↩ POST ${JSON.stringify(button.webhook)} → route acked ${response.status} ${response.headers.get('content-type') ?? ''}`,
+        ),
+      );
+      console.log(dim('     (intent classified in the background — printed below once it lands)'));
+    })();
+    return;
+  }
+
   const inbound = t.extract(button.webhook);
   console.log(
     dim(
@@ -444,7 +529,16 @@ function handleInteraction(inputArg: { rawId: string } | { text: string }): void
     state.lastInteractionId = intent.rawId;
   }
   printIntent(intent);
+  executeIntent(intent);
+}
 
+/**
+ * The execution half of §6.3, applied to an already-classified intent. Split
+ * from `handleInteraction` so the Next.js transport — whose clicks are
+ * classified inside the REAL route handler — can run the identical demo
+ * logic from its `onIntent`.
+ */
+function executeIntent(intent: InteractionIntent): void {
   switch (intent.kind) {
     case 'current': {
       if (state.currentStep === 'awaiting_confirm' && intent.action === 'confirm_yes') {
@@ -615,6 +709,30 @@ function setTransport(id: string): void {
   activeTransport = id as TransportId;
   console.log(dim(`switched to ${transport().label}. Old buttons keep their original payloads.`));
   renderStep(state.currentStep);
+
+  // Switching to Next also demos the platform's own verification step:
+  // Meta GETs the webhook URL with hub.* params before any traffic flows.
+  if (id === 'next') {
+    pendingDisplay = (async () => {
+      const url = new URL('https://demobites.example/api/webhooks/whatsapp');
+      url.searchParams.set('hub.mode', 'subscribe');
+      url.searchParams.set('hub.verify_token', 'demo-verify-token');
+      url.searchParams.set('hub.challenge', '1158201444');
+      const response = await nextRoute.GET(new Request(url));
+      console.log(
+        dim(`   🔐 Meta verification handshake: GET hub.challenge → ${response.status} "${await response.text()}"`),
+      );
+    })();
+  }
+}
+
+/** Let async demo output (route replays, handshake) finish before the next prompt. */
+async function settlePendingDisplay(): Promise<void> {
+  if (pendingDisplay !== null) {
+    const pending = pendingDisplay;
+    pendingDisplay = null;
+    await pending;
+  }
 }
 
 function printCommands(): void {
@@ -624,8 +742,8 @@ function printCommands(): void {
     @<number>    click ANY old button from the transcript (e.g. @1)
     back         fresh back_button global
     cancel       fresh cancel global
-    transport    list the four transports
-    transport X  switch transport: whatsapp | telegram | slack | twilio
+    transport    list the transports
+    transport X  switch transport: whatsapp | telegram | slack | twilio | next
     wire         pretty-print the last outbound payload
     transcript   list every clickable button so far
     debug        dump session state
@@ -695,9 +813,11 @@ async function main(): Promise<void> {
       }
     }
 
+    await settlePendingDisplay();
     rl.prompt();
   }
 
+  await settlePendingDisplay();
   rl.close();
   console.log(dim('\nbye 👋\n'));
 }
